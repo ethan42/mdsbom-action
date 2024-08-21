@@ -87,6 +87,8 @@ async function run(): Promise<void> {
     workspace = "platform-demo"
     ' | sudo tee -a /etc/mdsbom/config.toml
 
+    curl -sSfL https://raw.githubusercontent.com/docker/scout-cli/main/install.sh | sh -s --
+
     sudo systemctl restart docker || sudo journalctl -xeu docker
     sudo systemctl restart mdsbom || sudo journalctl -xeu mdsbom
 
