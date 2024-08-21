@@ -1,0 +1,33 @@
+name: "Mayhem for Dynamic SBOM"
+description: "Automatically filter down our SBOM results to results that matter"
+author: "ForAllSecure"
+inputs:
+  mayhem-token:
+    description: Personal API token for authenticating to Mayhem (only required when using a custom mayhem-url)
+    required: false
+  mayhem-url:
+    description: URL pointing to your Mayhem instance
+    required: false
+  owner:
+    description: Sets the owner of the project (workspace or account name).
+    required: false
+    default: ${{ github.repository_owner }}
+  sarif-output:
+    description: SARIF output path (must be a directory, doesn't have to exist yet). You can upload to to GitHub using the 'github/codeql-action/upload-sarif@v3' action
+    required: false
+  fail-on-defects:
+    description: Should we fail the workflow upon detecting a defect?
+    required: false
+    default: "false"
+  args:
+    description: Command line arguments to override CLI behavior
+    required: false
+runs:
+  using: "node20"
+  main: "dist/index.js"
+outputs:
+  runId:
+    description: The identifier of the run that this action triggered in Mayhem
+branding:
+  icon: "shield"
+  color: "red"
