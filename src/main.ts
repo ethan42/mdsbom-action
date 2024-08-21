@@ -1,102 +1,52 @@
 import { getInput, getBooleanInput, info, setFailed } from "@actions/core";
 import { exec } from "@actions/exec";
-import { context as githubContext } from '@actions/github';
 import { downloadTool } from "@actions/tool-cache";
-import { readFileSync, chmodSync } from "fs";
 
 const mayhemUrl: string =
   getInput("mayhem-url") || "https://app.mayhem.security";
 
 /**
- * Operating systems that an mCode CLI is available for, mapped to the URL path it can be
+ * Operating systems that an mdsbom CLI is available for, mapped to the URL path it can be
  * downloaded from on a recent Mayhem cluster.
  */
 enum CliOsPath {
-  Linux = "Linux/mayhem",
-  MacOS = "Darwin/mayhem.pkg",
-  Windows = "Windows/mayhem.exe",
+  Linux = "mdsbom/linux/latest/mdsbom.deb",
 }
 
 type Config = {
-  githubToken: string;
   mayhemToken: string;
+  image: string;
 
-  packagePath: string;
-  sarifOutputDir: string;
-  junitOutputDir: string;
-  coverageOutputDir: string;
+  sarifOutput: string;
 
+  command: string;
   failOnDefects: boolean;
-  verbosity: string;
-  owner: string;
-  project: string;
-  repo: string;
-  ciUrl: string;
-  branchName: string;
-  revision: string;
-  mergeBaseBranchName: string;
+  workspace: string;
 };
 
 function getConfig(): Config {
-  const githubToken: string = getInput("github-token", {
-    required: true,
-  });
-  process.env["GITHUB_TOKEN"] = githubToken;
-
-  const issueNumber = githubContext.issue.number
-  if (issueNumber) {
-    process.env['GITHUB_ISSUE_ID'] = String(issueNumber)
-  }
-
-
-  const repo = process.env["GITHUB_REPOSITORY"];
-  if (repo === undefined) {
-    throw Error(
-      "Missing GITHUB_REPOSITORY environment variable. " +
-        "Are you not running this in a Github Action environment?",
-    );
-  }
-
-  const ghRepo = `${process.env["GITHUB_SERVER_URL"]}:443/${repo}/`;
-  const eventPath = process.env["GITHUB_EVENT_PATH"] || "event.json";
-  const event = JSON.parse(readFileSync(eventPath, "utf-8")) || {};
-  const eventPullRequest = event.pull_request;
 
   return {
-    githubToken,
-    mayhemToken: getInput("mayhem-token") || githubToken,
-    packagePath: getInput("package") || ".",
-    sarifOutputDir: getInput("sarif-output") || "",
-    junitOutputDir: getInput("junit-output") || "",
-    coverageOutputDir: getInput("coverage-output") || "",
+    mayhemToken: getInput("mayhem-token"),
+    sarifOutput: getInput("sarif-output") || "",
     failOnDefects: getBooleanInput("fail-on-defects") || false,
-    verbosity: getInput("verbosity") || "info",
-    owner: getInput("owner").toLowerCase(),
-    project: (getInput("project") || repo).toLowerCase(),
-    repo,
-    ciUrl: `${ghRepo}/actions/runs/${process.env["GITHUB_RUN_ID"]}`,
-    branchName: eventPullRequest
-      ? eventPullRequest.head.ref
-      : process.env["GITHUB_REF_NAME"]?.slice("refs/heads/".length) || "main",
-    revision: eventPullRequest
-      ? eventPullRequest.head.sha
-      : process.env["GITHUB_SHA"] || "unknown",
-    mergeBaseBranchName: eventPullRequest ? eventPullRequest.base.ref : "main",
+    workspace: getInput("workspace").toLowerCase(),
+    image: getInput("image"),
+    command: getInput("command") || 'grype',
   };
 }
 
 /**
- * Downloads the mCode CLI from the given Mayhem cluster, marks it as executable, and returns the
+ * Downloads the mdsbom CLI from the given Mayhem cluster, marks it as executable, and returns the
  * path to the downloaded CLI.
  * @param url the base URL of the Mayhem cluster, such as "https://app.mayhem.security".
  * @param os the operating system to download the CLI for.
- * @return Path to the downloaded mCode CLI; resolves when the CLI download is complete.
+ * @return Path to the downloaded mdsbom CLI; resolves when the CLI download is complete.
  */
 async function downloadCli(url: string, os: CliOsPath): Promise<string> {
   // Download the CLI and mark it as executable.
-  const mcodePath = await downloadTool(`${url}/cli/${os}`);
-  chmodSync(mcodePath, 0o755);
-  return mcodePath;
+  const mdsbomPath = await downloadTool(`${url}/cli/${os}`);
+  return mdsbomPath;
 }
 
 /** Mapping action arguments to CLI arguments and completing a run */
@@ -105,121 +55,45 @@ async function run(): Promise<void> {
     // Validate the action inputs and create a Config object from them.
     const config = getConfig();
 
-    // Download the mCode CLI for Linux.
-    const cli = await downloadCli(mayhemUrl, CliOsPath.Linux);
+    // Download the mdsbom deb for Linux.
+    const deb = await downloadCli(mayhemUrl, CliOsPath.Linux);
 
     const args: string[] = (getInput("args") || "").split(" ");
 
-    // defaults next
-    if (!args.includes("--duration")) {
-      args.push("--duration", "60");
-    }
-    if (!args.includes("--image")) {
-      args.push("--image", "forallsecure/debian-buster:latest");
-    }
-
-    args.push("--ci-url", config.ciUrl);
-    args.push("--merge-base-branch-name", config.mergeBaseBranchName);
-    args.push("--branch-name", config.branchName);
-    args.push("--revision", config.revision);
-
     const argsString = args.join(" ");
-
-    // Generate arguments for wait command
-    // sarif, junit, coverage
-
-    const waitArgs = [];
-    if (config.sarifOutputDir) {
-      // $runName is a variable that is set in the bash script
-      waitArgs.push("--sarif", `${config.sarifOutputDir}/\${runName}.sarif`);
-    }
-    if (config.junitOutputDir) {
-      // $runName is a variable that is set in the bash script
-      waitArgs.push("--junit", `${config.junitOutputDir}/\${runName}.xml`);
-    }
-    if (config.coverageOutputDir) {
-      waitArgs.push("--coverage");
-    }
-    if (config.failOnDefects) {
-      waitArgs.push("--fail-on-defects");
-    }
-
-    // create wait args string
-    const waitArgsString = waitArgs.join(" ");
 
     const script = `
     set -xe
-    # create sarif output directory
-    if [ -n "${config.sarifOutputDir}" ]; then
-      mkdir -p ${config.sarifOutputDir};
-    fi
+    sudo dpkg -i ${deb}
+    sudo usermod -aG mdsbom $USER
 
-    # create junit output directory
-    if [ -n "${config.junitOutputDir}" ]; then
-      mkdir -p ${config.junitOutputDir};
-    fi
+    echo '{
+      "runtimes": {
+        "mdsbom": {
+          "path": "/usr/bin/mdsbom",
+          "runtimeArgs": [
+            "runc",
+            "--",
+            "runc"
+          ]
+        }
+      },
+      "default-runtime": "mdsbom"
+    }' | sudo tee /etc/docker/daemon.json > /dev/null
 
-    # create coverage output directory
-    if [ -n "${config.coverageOutputDir}" ]; then
-      mkdir -p ${config.coverageOutputDir};
-    fi
+    echo '[sync]
+    api_token = "${config.mayhemToken}"
+    upstream_url = "https://app.mayhem.security/"
+    workspace = "platform-demo"
+    ' | sudo tee -a /etc/mdsbom/config.toml
 
-    # Run mayhem
-    run=$(${cli} --verbosity ${config.verbosity} run ${config.packagePath} \
-                 --project ${config.project} \
-                 --owner ${config.owner} ${argsString});
+    sudo systemctl restart docker || sudo journalctl -xeu docker
+    sudo systemctl restart mdsbom || sudo journalctl -xeu mdsbom
 
-    # Persist the run id to the GitHub output
-    echo "runId=$run" >> $GITHUB_OUTPUT;
+    mdsbom login ${mayhemUrl} ${config.mayhemToken}
 
-    if [ -n "$run" ]; then
-      echo "Run $run succesfully scheduled.";
-    else
-      echo "Could not start run successfully, exiting with non-zero exit code.".
-      exit 1;
-    fi
-
-    # if the user didn't specify requiring any output, don't wait for the result.
-    if [ -z "${config.coverageOutputDir}" ] && \
-        [ -z "${config.junitOutputDir}" ] && \
-        [ -z "${config.sarifOutputDir}" ] && \
-        [ "${config.failOnDefects.toString().toLowerCase()}" != "true" ]; then
-      echo "No coverage, junit or sarif output requested, not waiting for job result.";
-      exit 0;
-    fi
-
-    # run name is the last part of the run id
-    runName="$(echo $run | awk -F / '{ print $(NF-1) }')";
-
-    # wait for run to finish
-    if ! ${cli} --verbosity ${config.verbosity} wait $run \
-            --owner ${config.owner} \
-            ${waitArgsString}; then
-      exit 3;
-    fi
-
-
-    # check status, exit with non-zero status if failed or stopped
-    status=$(${cli} --verbosity ${config.verbosity} show \
-                    --owner ${config.owner} \
-                    --format json $run | jq '.[0].status');
-    if [[ $status == *"stopped"* || $status == *"failed"* ]]; then
-      exit 2;
-    fi
-
-    # Strip the run number from the full run path to get the project/target,
-    # and save the run number separately.
-    target=$(echo $run | sed 's:/[^/]*$::')
-    run_number=$(echo $run | sed 's:.*/::')
-
-    if [ -n "${config.coverageOutputDir}" ]; then
-      ${cli} --verbosity ${config.verbosity} download --owner ${config.owner} --output ${config.coverageOutputDir} --run_number $run_number $target;
-    fi
-    `;
-
-    process.env["MAYHEM_TOKEN"] = config.mayhemToken;
-    process.env["MAYHEM_URL"] = mayhemUrl;
-    process.env["MAYHEM_PROJECT"] = config.repo;
+    mdsbom ${config.command} ${config.image} --workspace ${config.workspace} --sca-report-out ${config.sarifOutput} ${argsString}
+    `
 
     // Start fuzzing
     const cliRunning = exec("bash", ["-c", script], {
@@ -227,21 +101,21 @@ async function run(): Promise<void> {
     });
     const res = await cliRunning;
     if (res === 1) {
-      throw new Error(`The Mayhem for Code scan was unable to execute the Mayhem run for your target.
+      throw new Error(`The Mayhem for Dynamic SBOM scan failed to run on your image.
       Check your configuration. For package visibility/permissions issues, see
       https://docs.github.com/en/packages/learn-github-packages/configuring-a-packages-access-control-and-visibility
       on how to set your package to 'Public'.`);
     } else if (res === 2) {
       throw new Error(
-        "The Mayhem for Code scan detected the Mayhem run for your " +
+        "The Mayhem for Dynamic SBOM scan detected the Mayhem run for your " +
           "target was unsuccessful.",
       );
     } else if (res === 3) {
-      throw new Error("The Mayhem for Code scan found defects in your target.");
+      throw new Error("The Mayhem for Dynamic SBOM scan found defects in your target.");
     }
   } catch (err: unknown) {
     if (err instanceof Error) {
-      info(`mcode action failed with: ${err.message}`);
+      info(`mdsbom action failed with: ${err.message}`);
       setFailed(err.message);
     }
   }

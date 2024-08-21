@@ -8,4 +8,4 @@ WORKDIR ${SRCDIR}
 
 COPY . .
 
-RUN yarn install --production
+RUN yarn install --production --force
