@@ -7,7 +7,7 @@ inputs:
     required: true
   image:
     description: Docker image to scan with mdsbom
-    required: true
+    required: false
   mayhem-url:
     description: URL pointing to your Mayhem instance
     required: false

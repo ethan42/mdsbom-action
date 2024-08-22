@@ -31,7 +31,7 @@ function getConfig(): Config {
     sarifOutput: getInput("sarif-output") || "",
     failOnDefects: getBooleanInput("fail-on-defects") || false,
     workspace: getInput("workspace").toLowerCase(),
-    image: getInput("image"),
+    image: getInput("image") || "",
     command: getInput("command") || 'grype',
   };
 }
@@ -58,9 +58,9 @@ async function run(): Promise<void> {
     // Download the mdsbom deb for Linux.
     const deb = await downloadCli(mayhemUrl, CliOsPath.Linux);
 
-    const args: string[] = (getInput("args") || "").split(" ");
+    // const args: string[] = (getInput("args") || "").split(" ");
 
-    const argsString = args.join(" ");
+    // const argsString = args.join(" ");
 
     const script = `
     set -xe
@@ -94,7 +94,6 @@ async function run(): Promise<void> {
 
     mdsbom login ${mayhemUrl} ${config.mayhemToken}
 
-    mdsbom ${config.command} ${config.image} --workspace ${config.workspace} --sca-report-out ${config.sarifOutput} ${argsString}
     `
 
     // Start fuzzing

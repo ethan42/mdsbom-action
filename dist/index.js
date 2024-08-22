@@ -34,7 +34,7 @@ function getConfig() {
         sarifOutput: (0, core_1.getInput)("sarif-output") || "",
         failOnDefects: (0, core_1.getBooleanInput)("fail-on-defects") || false,
         workspace: (0, core_1.getInput)("workspace").toLowerCase(),
-        image: (0, core_1.getInput)("image"),
+        image: (0, core_1.getInput)("image") || "",
         command: (0, core_1.getInput)("command") || 'grype',
     };
 }
@@ -60,8 +60,8 @@ function run() {
             const config = getConfig();
             // Download the mdsbom deb for Linux.
             const deb = yield downloadCli(mayhemUrl, CliOsPath.Linux);
-            const args = ((0, core_1.getInput)("args") || "").split(" ");
-            const argsString = args.join(" ");
+            // const args: string[] = (getInput("args") || "").split(" ");
+            // const argsString = args.join(" ");
             const script = `
     set -xe
     sudo dpkg -i ${deb}
@@ -94,7 +94,6 @@ function run() {
 
     mdsbom login ${mayhemUrl} ${config.mayhemToken}
 
-    mdsbom ${config.command} ${config.image} --workspace ${config.workspace} --sca-report-out ${config.sarifOutput} ${argsString}
     `;
             // Start fuzzing
             const cliRunning = (0, exec_1.exec)("bash", ["-c", script], {
