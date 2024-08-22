@@ -83,8 +83,8 @@ function run() {
 
     echo '[sync]
     api_token = "${config.mayhemToken}"
-    upstream_url = "https://app.mayhem.security/"
-    workspace = "platform-demo"
+    upstream_url = "${mayhemUrl}"
+    workspace = "${config.workspace}"
     ' | sudo tee -a /etc/mdsbom/config.toml
 
     curl -sSfL https://raw.githubusercontent.com/docker/scout-cli/main/install.sh | sh -s --
